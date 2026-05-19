@@ -13,7 +13,7 @@ Laravel notification channel and API client for the Bizwachat public API.
 ## Installation
 
 ```bash
-composer require bizwachat/laravel-notification
+composer require getbizapps/bizwachat-laravel-notification
 php artisan vendor:publish --tag=bizwachat-notification-config
 ```
 
