@@ -77,6 +77,15 @@ class BizwaChatClient
         return $this->request('POST', $uri, $payload, $query, $headers, true);
     }
 
+    public function postAuto(string $uri, array $payload = [], array $query = [], array $headers = []): ApiResponse
+    {
+        if ($this->containsFilePayload($payload)) {
+            return $this->postMultipart($uri, $payload, $query, $headers);
+        }
+
+        return $this->request('POST', $uri, $payload, $query, $headers);
+    }
+
     protected function toApiResponse(Response $response, string $method, string $uri): ApiResponse
     {
         try {
@@ -157,6 +166,7 @@ class BizwaChatClient
 
         return $request->send($method, $uri, [
             'query' => $query,
+            'multipart' => [],
         ]);
     }
 
@@ -255,6 +265,29 @@ class BizwaChatClient
             is_scalar($value) => (string) $value,
             default => json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '',
         };
+    }
+
+    protected function containsFilePayload(array $payload): bool
+    {
+        foreach ($payload as $value) {
+            if (is_array($value) && $this->containsFilePayload($value)) {
+                return true;
+            }
+
+            if ($value instanceof UploadedFile || $value instanceof SplFileInfo) {
+                return true;
+            }
+
+            if (is_string($value) && is_file($value)) {
+                return true;
+            }
+
+            if (is_resource($value)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function normalizeUri(string $uri): string

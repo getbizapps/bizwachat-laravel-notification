@@ -13,11 +13,11 @@ class MessagesResource extends AbstractResource
 
     public function sendTemplate(array $payload, ?string $subdomain = null): ApiResponse
     {
-        return $this->client->postMultipart($this->endpoint($subdomain, 'messages/template'), $payload);
+        return $this->client->postAuto($this->endpoint($subdomain, 'messages/template'), $payload);
     }
 
     public function sendMedia(array $payload, ?string $subdomain = null): ApiResponse
     {
-        return $this->client->postMultipart($this->endpoint($subdomain, 'messages/media'), $payload);
+        return $this->client->postAuto($this->endpoint($subdomain, 'messages/media'), $payload);
     }
 }
