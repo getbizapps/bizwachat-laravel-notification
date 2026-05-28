@@ -11,12 +11,15 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use JsonException;
 use SplFileInfo;
 use Throwable;
 
 class BizwaChatClient
 {
     use LogsExceptions;
+
+    protected const MAX_LOGGED_BODY_BYTES = 4096;
 
     public function request(
         string $method,
@@ -89,8 +92,7 @@ class BizwaChatClient
     protected function toApiResponse(Response $response, string $method, string $uri): ApiResponse
     {
         try {
-            $body = $response->json();
-            $body = is_array($body) ? $body : [];
+            $body = $this->parseResponseBody($response, $method, $uri);
             $apiResponse = new ApiResponse($response->successful(), $response->status(), $body, $response->headers());
 
             if ($response->failed()) {
@@ -119,6 +121,18 @@ class BizwaChatClient
             }
 
             return ApiResponse::failed($exception->status(), $exception->responseBody(), $exception);
+        } catch (BizwaChatException $exception) {
+            $this->logException($exception->getMessage(), $exception, array_merge([
+                'method' => $method,
+                'uri' => $uri,
+                'status' => $response->status(),
+            ], $exception->context()));
+
+            if ($this->shouldThrow()) {
+                throw $exception;
+            }
+
+            return ApiResponse::failed($response->status(), ['message' => $exception->getMessage()], $exception);
         } catch (Throwable $exception) {
             $this->logException('BizwaChat API response parsing failed.', $exception, [
                 'method' => $method,
@@ -136,6 +150,62 @@ class BizwaChatClient
 
             return ApiResponse::failed($response->status(), ['message' => $exception->getMessage()], $exception);
         }
+    }
+
+    protected function parseResponseBody(Response $response, string $method, string $uri): array
+    {
+        $rawBody = $response->body();
+
+        if ($rawBody === '' || $rawBody === null) {
+            return [];
+        }
+
+        try {
+            $decoded = json_decode($rawBody, true, 512, JSON_THROW_ON_ERROR);
+
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+
+            if ($decoded === null) {
+                return [];
+            }
+
+            return ['data' => $decoded];
+        } catch (JsonException $exception) {
+            if ($this->shouldThrow()) {
+                throw new BizwaChatException('BizwaChat API returned a non-JSON response.', [
+                    'method' => $method,
+                    'uri' => $uri,
+                    'status' => $response->status(),
+                    'content_type' => $response->header('Content-Type'),
+                    'raw_body' => $this->truncateForLogs($rawBody),
+                ], 0, $exception);
+            }
+
+            $this->logException('BizwaChat API returned a non-JSON response.', $exception, [
+                'method' => $method,
+                'uri' => $uri,
+                'status' => $response->status(),
+                'content_type' => $response->header('Content-Type'),
+                'raw_body' => $this->truncateForLogs($rawBody),
+            ]);
+
+            return [
+                'message' => 'BizwaChat API returned a non-JSON response.',
+                'content_type' => $response->header('Content-Type'),
+                'raw_body' => $this->truncateForLogs($rawBody),
+            ];
+        }
+    }
+
+    protected function truncateForLogs(string $value): string
+    {
+        if (strlen($value) <= self::MAX_LOGGED_BODY_BYTES) {
+            return $value;
+        }
+
+        return substr($value, 0, self::MAX_LOGGED_BODY_BYTES).'…(truncated)';
     }
 
     protected function baseRequest(array $headers = []): PendingRequest
